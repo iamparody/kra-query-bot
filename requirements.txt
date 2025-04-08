@@ -1,5 +1,5 @@
 chainlit==0.6.2
-requests==2.31.0
+requests==2.32.3
 readability-lxml==0.8.1
-lxml_html_clean==0.2.0
-beautifulsoup4==4.12.3
+lxml_html_clean==0.4.1
+beautifulsoup4==4.13.3
