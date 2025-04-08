@@ -9,7 +9,9 @@ import os
 #SERPAPI_KEY = "fee765e7e70c1e59ac2d2e68b0b50f0d633c3ccd"
 #MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions"
 #SEARCH_URL = "https://google.serper.dev/search"
-
+port = int(os.environ.get("PORT", 10000))  # Render sets $PORT, default 10000 locally
+cl.server.SERVER_HOST = "0.0.0.0"  # Bind to all interfaces
+cl.server.SERVER_PORT = port
 
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "QlLF9qhUP5dhDVGH8Pe3PteDZxPcZh4m")
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "fee765e7e70c1e59ac2d2e68b0b50f0d633c3ccd")
