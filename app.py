@@ -53,15 +53,18 @@ async def start():
     await cl.Message(content="Hello! Ask me a question about KRA taxes, and I’ll fetch the answer from official sources.").send()
 
 @cl.on_message
-async def main(message: cl.Message):
-    msg_content = message.content.strip().lower()
+async def main(message):
+    if isinstance(message, str):
+        msg_content = message.strip().lower()
+    else:
+        msg_content = message.content.strip().lower()
     if not (msg_content.endswith("?") or "what" in msg_content or "how" in msg_content or "who" in msg_content or "can" in msg_content):
         await cl.Message(content="That’s not a question! Try asking something like 'What is the VAT rate?'").send()
         return
 
-    # Show loading state
     loading_msg = cl.Message(content="Fetching answer...")
     await loading_msg.send()
+   
 
     urls = get_news_urls(message.content)
     texts = get_cleaned_text(urls)
