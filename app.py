@@ -119,10 +119,3 @@ async def main(message):
         error_msg = cl.Message(content=f"An error occurred: {str(e)}")
         await error_msg.send()
         await loading_msg.remove()
-
-if __name__ == "__main__":
-    import chainlit.cli as cli
-    import sys
-
-    sys.argv = ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", str(port)]
-    cli.main()
