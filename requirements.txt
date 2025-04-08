@@ -1,11 +1,5 @@
-chainlit==0.6.2
+streamlit==1.36.0
 requests==2.32.3
 readability-lxml==0.8.1
 lxml_html_clean==0.4.1
 beautifulsoup4==4.13.3
-fastapi==0.97.0
-uvicorn==0.22.0
-pydantic==1.10.21
-aiohttp==3.11.16
-python-dotenv==1.1.0
-python-socketio==5.12.1
