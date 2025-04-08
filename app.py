@@ -64,14 +64,13 @@ async def main(message):
 
     loading_msg = cl.Message(content="Fetching answer...")
     await loading_msg.send()
-   
 
-    urls = get_news_urls(message.content)
+    urls = get_news_urls(message if isinstance(message, str) else message.content)
     texts = get_cleaned_text(urls)
     
     max_chars = 30000 - 1000
     combined_text = "".join(texts)[:max_chars]
-    prompt_intro = f"{message.content} Provide a clear and concise answer based solely on the information from the fetched Kenya Revenue Authority (KRA) pages below. Do not express doubt or speculate beyond this content:"
+    prompt_intro = f"{message if isinstance(message, str) else message.content} Provide a clear and concise answer based solely on the information from the fetched Kenya Revenue Authority (KRA) pages below. Do not express doubt or speculate beyond this content:"
     prompt = f"{prompt_intro}\n\n{combined_text}"
     print(f"Prompt length: {len(prompt)} chars")
 
@@ -96,7 +95,7 @@ async def main(message):
             return
 
         msg = cl.Message(content="")
-        await msg.send()  # Initialize the message
+        await msg.send()
         full_content = ""
         for chunk in response.iter_lines():
             if chunk:
@@ -112,9 +111,8 @@ async def main(message):
                 except json.JSONDecodeError:
                     print(f"Skipping malformed chunk: {chunk_str}")
                     continue
-        # Update content directly instead of using .update(content=...)
         msg.content = f"{full_content}\n\n**Sources:**\n" + '\n'.join(urls)
-        await msg.send()  # Re-send to update UI
+        await msg.send()
         await loading_msg.remove()
     except Exception as e:
         print(f"Unexpected error: {e}")
