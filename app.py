@@ -14,7 +14,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # API keys
-
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions"
 SEARCH_URL = "https://google.serper.dev/search"
 
