@@ -4,10 +4,17 @@ import json
 from readability import Document
 from bs4 import BeautifulSoup
 import os
+from PyPDF2 import PdfReader
+import io
+import logging
+from datetime import datetime
+
+# Configure logging (internal, not UI)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 # API keys
-MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "QlLF9qhUP5dhDVGH8Pe3PteDZxPcZh4m")
-SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "fee765e7e70c1e59ac2d2e68b0b50f0d633c3ccd")
+
 MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions"
 SEARCH_URL = "https://google.serper.dev/search"
 
@@ -18,9 +25,31 @@ if not MISTRAL_API_KEY or not SERPAPI_KEY:
 
 # Initialize session state
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [{"user": "", "bot": "Hello, how can I help you today?"}]
+    st.session_state.chat_history = []
 if "recent_searches" not in st.session_state:
     st.session_state.recent_searches = []
+if "initial_greeting" not in st.session_state:
+    # Fetch greeting on app load
+    payload = {
+        "model": "mistral-tiny",
+        "messages": [{"role": "user", "content": "Greet the user briefly and professionally about KRA tax help."}],
+        "stream": True
+    }
+    headers = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
+    response = requests.post(MISTRAL_CHAT_URL, headers=headers, json=payload, stream=True, timeout=10)
+    greeting = ""
+    for chunk in response.iter_lines():
+        if chunk:
+            chunk_str = chunk.decode().replace("data: ", "")
+            if chunk_str == "[DONE]":
+                break
+            try:
+                data = json.loads(chunk_str)
+                if data.get("choices"):
+                    greeting += data["choices"][0]["delta"].get("content", "")
+            except json.JSONDecodeError:
+                continue
+    st.session_state.initial_greeting = greeting or "Welcome! I’m here to assist with KRA tax queries."
 
 # Functions for API calls
 def get_kra_urls(query):
@@ -29,27 +58,60 @@ def get_kra_urls(query):
     headers = {"X-API-KEY": SERPAPI_KEY, "Content-Type": "application/json"}
     response = requests.post(SEARCH_URL, headers=headers, data=payload)
     if not response.ok:
+        logger.warning(f"Search API failed for '{query}', using fallback URL")
         return ["https://www.kra.go.ke/helping-tax-payers/faqs/filing-returns-on-itax"]
     results = response.json()
-    return [item["link"] for item in results.get("organic", []) if "kra.go.ke" in item["link"]][:5]
+    urls = [item["link"] for item in results.get("organic", []) if "kra.go.ke" in item["link"]][:5]
+    logger.info(f"Fetched URLs for '{query}': {urls}")
+    return urls
 
 def extract_text_from_urls(urls):
     texts = []
     for url in urls:
         try:
             r = requests.get(url, timeout=10)
-            doc = Document(r.text)
-            readable = BeautifulSoup(doc.summary(), "html.parser").get_text()
-            texts.append({"url": url, "content": readable})
+            r.raise_for_status()
+            if url.lower().endswith(".pdf"):
+                pdf_file = io.BytesIO(r.content)
+                reader = PdfReader(pdf_file)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() or ""
+                texts.append({"url": url, "content": text[:500]})
+                logger.info(f"Extracted PDF text from {url}")
+            else:
+                doc = Document(r.text)
+                readable = BeautifulSoup(doc.summary(), "html.parser").get_text()
+                texts.append({"url": url, "content": readable})
+                logger.info(f"Extracted HTML text from {url}")
+        except requests.exceptions.SSLError as ssl_err:
+            try:
+                r = requests.get(url, timeout=10, verify=False)
+                r.raise_for_status()
+                if url.lower().endswith(".pdf"):
+                    pdf_file = io.BytesIO(r.content)
+                    reader = PdfReader(pdf_file)
+                    text = ""
+                    for page in reader.pages:
+                        text += page.extract_text() or ""
+                    texts.append({"url": url, "content": text[:500]})
+                    logger.info(f"Extracted PDF text from {url} (SSL bypassed)")
+                else:
+                    doc = Document(r.text)
+                    readable = BeautifulSoup(doc.summary(), "html.parser").get_text()
+                    texts.append({"url": url, "content": readable})
+                    logger.info(f"Extracted HTML text from {url} (SSL bypassed)")
+            except Exception as e:
+                logger.warning(f"Failed to fetch {url}: {e}")
         except Exception as e:
-            st.warning(f"Could not fetch {url}: {e}")
+            logger.warning(f"Failed to fetch {url}: {e}")
     return texts
 
 def stream_mistral_response(prompt):
     payload = {
         "model": "mistral-tiny",
         "messages": [
-            {"role": "system", "content": "You are a precise assistant that answers based only on the provided KRA text. Avoid external knowledge, speculation, or disclaimers about missing info."},
+            {"role": "system", "content": "Answer concisely and directly using only the provided KRA text, without prefacing or qualifying the response."},
             {"role": "user", "content": prompt}
         ],
         "stream": True
@@ -76,13 +138,13 @@ def save_feedback(query, response, rating):
     with open("feedback_log.json", "w") as f:
         json.dump(feedback_data, f, indent=2)
 
-# Custom CSS for styling (copied from source code, adjusted for dark background)
+# Custom CSS (unchanged)
 st.markdown(
     """
     <style>
         body {
-            background-color: #1f2937;  /* Dark background */
-            color: #f9fafb;  /* Light text for contrast */
+            background-color: #1f2937;
+            color: #f9fafb;
         }
         .user {
             float: right;
@@ -96,7 +158,7 @@ st.markdown(
         }
         .bot {
             float: left;
-            color: #f9fafb;  /* Light text for bot messages */
+            color: #f9fafb;
             font-family: Georgia;
             clear: both;
         }
@@ -104,9 +166,9 @@ st.markdown(
             max-height: 400px;
             overflow-y: auto;
             padding: 10px;
-            border: 1px solid #4b5563;  /* Darker border for contrast */
+            border: 1px solid #4b5563;
             border-radius: 10px;
-            background-color: #374151;  /* Darker background for chat container */
+            background-color: #374151;
         }
         .sidebar .sidebar-content .topic-button {
             background-color: #4CAF50;
@@ -123,9 +185,9 @@ st.markdown(
             background-color: #45a049;
         }
         .stTextInput > div > div > input {
-            background-color: #4b5563;  /* Dark input background */
-            color: #f9fafb;  /* Light text */
-            border: 1px solid #6b7280;  /* Darker border */
+            background-color: #4b5563;
+            color: #f9fafb;
+            border: 1px solid #6b7280;
         }
         .stButton > button {
             background-color: #3b82f6;
@@ -140,18 +202,16 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Sidebar
+# Sidebar (unchanged)
 with st.sidebar:
     st.header("KRA Tax Assistant")
     st.markdown("Your guide to KRA tax policies and procedures.")
     
-    # Recent searches
     for search in st.session_state.recent_searches[-5:]:
         if st.button(search, key=f"recent_{search}", help=f"Revisit: {search}", use_container_width=True):
             st.session_state.user_input = search
             st.rerun()
     
-    # KRA Resources
     st.markdown("**KRA Resources**")
     st.markdown("- [KRA Website](https://www.kra.go.ke/)")
     st.markdown("- [iTax Portal](https://itax.kra.go.ke/)")
@@ -165,6 +225,8 @@ st.write("Ask a question below, and I’ll help with KRA tax information.")
 chat_container = st.container()
 with chat_container:
     st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
+    # Show initial greeting
+    st.markdown(f"<p class='bot'>{st.session_state.initial_greeting}</p>", unsafe_allow_html=True)
     for i, entry in enumerate(st.session_state.chat_history):
         if entry['user']:
             st.markdown(f"<p class='user'>{entry['user']}</p>", unsafe_allow_html=True)
@@ -191,13 +253,12 @@ def process_query():
             content_blocks = extract_text_from_urls(urls)
 
         if not content_blocks:
-            response = "Could not extract any text from KRA pages."
+            response = "I didn’t find enough info—please rephrase your question or try again."
         else:
             combined_text = "".join([block["content"] for block in content_blocks])[:12000]
-            prompt_intro = f"{query} Provide a clear and concise answer based solely on the information from the fetched Kenya Revenue Authority (KRA) pages below. Do not express doubt or speculate beyond this content:"
+            prompt_intro = f"{query} Provide a clear and concise answer based solely on the information from the fetched Kenya Revenue Authority (KRA) pages below:"
             full_prompt = f"{prompt_intro}\n\n{combined_text}"
 
-            # Stream bot response
             response_stream = stream_mistral_response(full_prompt)
             answer_text = ""
             for chunk in response_stream.iter_lines():
@@ -213,11 +274,9 @@ def process_query():
                     except json.JSONDecodeError:
                         continue
 
-            # Add sources to the response
             source_links = ", ".join([f'<a href="{block["url"]}" target="_blank">{block["url"]}</a>' for block in content_blocks])
             response = f"{answer_text}<br><br>**Sources:** {source_links}"
 
-        # Add to chat history and recent searches
         st.session_state.chat_history.append({"user": query, "bot": response})
         if query not in st.session_state.recent_searches:
             st.session_state.recent_searches.append(query)
